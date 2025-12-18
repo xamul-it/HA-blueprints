@@ -1,20 +1,72 @@
-alias: Pensili cucina - presenza e spegnimento automatico
-description: Dimming progressivo con ripristino anche dopo blackout
+blueprint:
+  name: Presenza → Dimming progressivo → Ripristino luminosità
+  description: >
+    Gestisce luci con sensore di presenza, dimming progressivo,
+    spegnimento finale e ripristino robusto anche dopo blackout.
+  domain: automation
+
+  input:
+    presence_sensor:
+      name: Sensore di presenza
+      selector:
+        entity:
+          domain: binary_sensor
+
+    light_target:
+      name: Luce da controllare
+      selector:
+        entity:
+          domain: light
+
+    brightness_helper:
+      name: Helper luminosità (input_number)
+      description: Deve iniziare a 0
+      selector:
+        entity:
+          domain: input_number
+
+    t_dim_50:
+      name: Tempo prima del 50%
+      default: 15
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: minuti
+
+    t_dim_1:
+      name: Tempo prima dell'1%
+      default: 20
+      selector:
+        number:
+          min: 1
+          max: 120
+          unit_of_measurement: minuti
+
+    t_off:
+      name: Tempo prima dello spegnimento
+      default: 25
+      selector:
+        number:
+          min: 1
+          max: 180
+          unit_of_measurement: minuti
+
 mode: restart
 
 trigger:
   - platform: state
-    entity_id: binary_sensor.cucina_presence
+    entity_id: !input presence_sensor
     to: "on"
     id: occupato
 
   - platform: state
-    entity_id: binary_sensor.cucina_presence
+    entity_id: !input presence_sensor
     to: "off"
     id: non_occupato
 
   - platform: state
-    entity_id: light.pensili_cucina
+    entity_id: !input light_target
     from: "unavailable"
     to: "on"
     id: ritorno_corrente
@@ -22,95 +74,98 @@ trigger:
 action:
   - choose:
 
-      # =========================
-      # PRESENZA RILEVATA
-      # =========================
+      # ===============================
+      # PRESENZA
+      # ===============================
       - conditions:
           - condition: trigger
             id: occupato
           - condition: template
-            value_template: "{{ states('input_number.luminosita_pensili_cucina') | int > 0 }}"
+            value_template: "{{ states(brightness_helper) | int > 0 }}"
         sequence:
           - service: light.turn_on
             target:
-              entity_id: light.pensili_cucina
+              entity_id: !input light_target
             data:
               transition: 2
-              brightness: "{{ states('input_number.luminosita_pensili_cucina') | int }}"
+              brightness: "{{ states(brightness_helper) | int }}"
           - service: input_number.set_value
             target:
-              entity_id: input_number.luminosita_pensili_cucina
+              entity_id: !input brightness_helper
             data:
               value: 0
 
-      # =========================
+      # ===============================
       # ASSENZA
-      # =========================
+      # ===============================
       - conditions:
           - condition: trigger
             id: non_occupato
         sequence:
 
-          # Salva luminosità iniziale (una sola volta)
+          # Salva luminosità iniziale
           - if:
               - condition: template
-                value_template: "{{ states('input_number.luminosita_pensili_cucina') | int == 0 }}"
+                value_template: "{{ states(brightness_helper) | int == 0 }}"
               - condition: state
-                entity_id: light.pensili_cucina
+                entity_id: !input light_target
                 state: "on"
             then:
               - service: input_number.set_value
                 target:
-                  entity_id: input_number.luminosita_pensili_cucina
+                  entity_id: !input brightness_helper
                 data:
-                  value: "{{ state_attr('light.pensili_cucina', 'brightness') | int }}"
+                  value: "{{ state_attr(light_target, 'brightness') | int }}"
 
-          # 15 min → 50%
-          - delay: "00:15:00"
+          # 50%
+          - delay:
+              minutes: !input t_dim_50
           - condition: state
-            entity_id: binary_sensor.cucina_presence
+            entity_id: !input presence_sensor
             state: "off"
           - service: light.turn_on
             target:
-              entity_id: light.pensili_cucina
+              entity_id: !input light_target
             data:
               transition: 5
               brightness: >
-                {{ (states('input_number.luminosita_pensili_cucina') | int * 0.5) | int }}
+                {{ (states(brightness_helper) | int * 0.5) | int }}
 
-          # 20 min → 1%
-          - delay: "00:05:00"
+          # 1%
+          - delay:
+              minutes: "{{ (t_dim_1 - t_dim_50) | int }}"
           - condition: state
-            entity_id: binary_sensor.cucina_presence
+            entity_id: !input presence_sensor
             state: "off"
           - service: light.turn_on
             target:
-              entity_id: light.pensili_cucina
+              entity_id: !input light_target
             data:
               transition: 5
               brightness_pct: 1
 
-          # 25 min → OFF
-          - delay: "00:05:00"
+          # OFF
+          - delay:
+              minutes: "{{ (t_off - t_dim_1) | int }}"
           - condition: state
-            entity_id: binary_sensor.cucina_presence
+            entity_id: !input presence_sensor
             state: "off"
           - service: light.turn_off
             target:
-              entity_id: light.pensili_cucina
+              entity_id: !input light_target
 
-      # =========================
+      # ===============================
       # RITORNO CORRENTE
-      # =========================
+      # ===============================
       - conditions:
           - condition: trigger
             id: ritorno_corrente
           - condition: template
-            value_template: "{{ states('input_number.luminosita_pensili_cucina') | int > 0 }}"
+            value_template: "{{ states(brightness_helper) | int > 0 }}"
         sequence:
           - service: light.turn_on
             target:
-              entity_id: light.pensili_cucina
+              entity_id: !input light_target
             data:
               transition: 2
-              brightness: "{{ states('input_number.luminosita_pensili_cucina') | int }}"
+              brightness: "{{ states(brightness_helper) | int }}"
