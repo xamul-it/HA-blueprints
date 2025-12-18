@@ -1,5 +1,5 @@
 blueprint:
-  name: Pensili cucina – presenza con timer 15/20/25 (FIX ISTANZA)
+  name: Pensili cucina – presenza con timer 15/20/25 v5
   description: >
     Versione corretta: istanziabile.
   domain: automation
