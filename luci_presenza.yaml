@@ -1,56 +1,29 @@
 blueprint:
-  name: Presenza → Dimming progressivo → Ripristino luminosità
+  name: Presenza → 50% → 1% → OFF con ripristino (robusto)
   description: >
-    Gestisce luci con sensore di presenza, dimming progressivo,
-    spegnimento finale e ripristino robusto anche dopo blackout.
+    Dimming progressivo a 15/20/25 minuti e ripristino al rientro.
+    Salva la luminosità iniziale e la ripristina anche dopo blackout (unavailable→on).
   domain: automation
 
   input:
     presence_sensor:
-      name: Sensore di presenza
+      name: Sensore presenza
       selector:
         entity:
           domain: binary_sensor
 
     light_target:
-      name: Luce da controllare
+      name: Luce pensili
       selector:
         entity:
           domain: light
 
     brightness_helper:
       name: Helper luminosità (input_number)
-      description: Deve iniziare a 0
+      description: Deve essere 0 quando “vuoto”
       selector:
         entity:
           domain: input_number
-
-    t_dim_50:
-      name: Tempo prima del 50%
-      default: 15
-      selector:
-        number:
-          min: 1
-          max: 60
-          unit_of_measurement: minuti
-
-    t_dim_1:
-      name: Tempo prima dell'1%
-      default: 20
-      selector:
-        number:
-          min: 1
-          max: 120
-          unit_of_measurement: minuti
-
-    t_off:
-      name: Tempo prima dello spegnimento
-      default: 25
-      selector:
-        number:
-          min: 1
-          max: 180
-          unit_of_measurement: minuti
 
 mode: restart
 
@@ -72,11 +45,16 @@ trigger:
     id: ritorno_corrente
 
 action:
+  - variables:
+      presence_sensor: !input presence_sensor
+      light_target: !input light_target
+      brightness_helper: !input brightness_helper
+
   - choose:
 
-      # ===============================
-      # PRESENZA
-      # ===============================
+      # =========================
+      # PRESENZA: ripristina se c'è un valore salvato
+      # =========================
       - conditions:
           - condition: trigger
             id: occupato
@@ -85,78 +63,77 @@ action:
         sequence:
           - service: light.turn_on
             target:
-              entity_id: !input light_target
+              entity_id: "{{ light_target }}"
             data:
-              transition: 2
+              transition: 5
               brightness: "{{ states(brightness_helper) | int }}"
           - service: input_number.set_value
             target:
-              entity_id: !input brightness_helper
+              entity_id: "{{ brightness_helper }}"
             data:
               value: 0
 
-      # ===============================
-      # ASSENZA
-      # ===============================
+      # =========================
+      # ASSENZA: salva e fa dimming 15/20/25
+      # =========================
       - conditions:
           - condition: trigger
             id: non_occupato
         sequence:
-
-          # Salva luminosità iniziale
+          # Salva luminosità iniziale una sola volta (pre-15 minuti)
           - if:
               - condition: template
                 value_template: "{{ states(brightness_helper) | int == 0 }}"
               - condition: state
-                entity_id: !input light_target
+                entity_id: "{{ light_target }}"
                 state: "on"
             then:
               - service: input_number.set_value
                 target:
-                  entity_id: !input brightness_helper
+                  entity_id: "{{ brightness_helper }}"
                 data:
                   value: "{{ state_attr(light_target, 'brightness') | int }}"
 
-          # 50%
-          - delay:
-              minutes: !input t_dim_50
+          # 15 min → 50% del valore salvato
+          - delay: "00:15:00"
           - condition: state
-            entity_id: !input presence_sensor
+            entity_id: "{{ presence_sensor }}"
             state: "off"
-          - service: light.turn_on
-            target:
-              entity_id: !input light_target
-            data:
-              transition: 5
-              brightness: >
-                {{ (states(brightness_helper) | int * 0.5) | int }}
+          - if:
+              - condition: template
+                value_template: "{{ states(brightness_helper) | int > 0 }}"
+            then:
+              - service: light.turn_on
+                target:
+                  entity_id: "{{ light_target }}"
+                data:
+                  transition: 5
+                  brightness: "{{ (states(brightness_helper) | int * 0.5) | int }}"
 
-          # 1%
-          - delay:
-              minutes: "{{ (t_dim_1 - t_dim_50) | int }}"
+          # 20 min → 1%
+          - delay: "00:05:00"
           - condition: state
-            entity_id: !input presence_sensor
+            entity_id: "{{ presence_sensor }}"
             state: "off"
           - service: light.turn_on
             target:
-              entity_id: !input light_target
+              entity_id: "{{ light_target }}"
             data:
               transition: 5
               brightness_pct: 1
 
-          # OFF
-          - delay:
-              minutes: "{{ (t_off - t_dim_1) | int }}"
+          # 25 min → OFF
+          - delay: "00:05:00"
           - condition: state
-            entity_id: !input presence_sensor
+            entity_id: "{{ presence_sensor }}"
             state: "off"
           - service: light.turn_off
             target:
-              entity_id: !input light_target
+              entity_id: "{{ light_target }}"
 
-      # ===============================
-      # RITORNO CORRENTE
-      # ===============================
+      # =========================
+      # RITORNO CORRENTE: ripristina al valore pre-15 se esiste
+      # =========================
       - conditions:
           - condition: trigger
             id: ritorno_corrente
@@ -165,7 +142,7 @@ action:
         sequence:
           - service: light.turn_on
             target:
-              entity_id: !input light_target
+              entity_id: "{{ light_target }}"
             data:
               transition: 2
               brightness: "{{ states(brightness_helper) | int }}"
