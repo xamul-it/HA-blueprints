@@ -1,11 +1,7 @@
 blueprint:
-  name: Pensili cucina – presenza con timer 15/20/25 - v4
+  name: Pensili cucina – presenza con timer 15/20/25 (FIX ISTANZA)
   description: >
-    A 15' riduce al 50% della luminosità iniziale,
-    a 20' porta all'1%,
-    a 25' spegne.
-    Al rientro ripristina la luminosità salvata.
-    Funziona anche dopo blackout.
+    Versione corretta: istanziabile.
   domain: automation
 
   input:
@@ -22,7 +18,7 @@ blueprint:
           domain: light
 
     brightness_helper:
-      name: Helper luminosità (input_number)
+      name: Helper luminosità
       selector:
         entity:
           domain: input_number
@@ -34,7 +30,6 @@ blueprint:
         number:
           min: 1
           max: 120
-          unit_of_measurement: minuti
 
     t_1:
       name: Minuti prima dell'1%
@@ -43,7 +38,6 @@ blueprint:
         number:
           min: 1
           max: 180
-          unit_of_measurement: minuti
 
     t_off:
       name: Minuti prima di OFF
@@ -52,7 +46,6 @@ blueprint:
         number:
           min: 1
           max: 240
-          unit_of_measurement: minuti
 
 mode: restart
 
@@ -88,84 +81,63 @@ trigger:
       minutes: !input t_off
     id: off_finale
 
-  - platform: state
-    entity_id: !input light_target
-    from: "unavailable"
-    to: "on"
-    id: ritorno_corrente
-
 action:
   - variables:
-      presence_sensor: !input presence_sensor
       light_target: !input light_target
       brightness_helper: !input brightness_helper
 
   - choose:
 
-      # ======================
-      # INIZIO ASSENZA → SALVA LUMINOSITÀ
-      # ======================
       - conditions:
           - condition: trigger
             id: assenza
+          - condition: template
+            value_template: >
+              {{ states(brightness_helper) | int == 0
+                 and states(light_target) == 'on' }}
         sequence:
-          - if:
-              - condition: template
-                value_template: "{{ states(brightness_helper) | int == 0 }}"
-              - condition: state
-                entity_id: "{{ light_target }}"
-                state: "on"
-            then:
-              - service: input_number.set_value
-                target:
-                  entity_id: "{{ brightness_helper }}"
-                data:
-                  value: "{{ state_attr(light_target, 'brightness') | default(255) | int }}"
+          - service: input_number.set_value
+            target:
+              entity_id: "{{ brightness_helper }}"
+            data:
+              value: "{{ state_attr(light_target,'brightness') | int }}"
 
-      # ======================
-      # 15' → 50%
-      # ======================
       - conditions:
           - condition: trigger
             id: dim_50
           - condition: template
-            value_template: "{{ states(brightness_helper) | int > 0 }}"
+            value_template: >
+              {{ states(light_target) == 'on'
+                 and states(brightness_helper) | int > 0 }}
         sequence:
           - service: light.turn_on
             target:
               entity_id: "{{ light_target }}"
             data:
-              transition: 5
               brightness: "{{ (states(brightness_helper) | int * 0.5) | int }}"
 
-      # ======================
-      # 20' → 1%
-      # ======================
       - conditions:
           - condition: trigger
             id: dim_1
+          - condition: template
+            value_template: "{{ states(light_target) == 'on' }}"
         sequence:
           - service: light.turn_on
             target:
               entity_id: "{{ light_target }}"
             data:
-              transition: 5
               brightness_pct: 1
 
-      # ======================
-      # 25' → OFF
-      # ======================
       - conditions:
           - condition: trigger
             id: off_finale
+          - condition: template
+            value_template: "{{ states(light_target) == 'on' }}"
         sequence:
           - service: light.turn_off
             target:
               entity_id: "{{ light_target }}"
 
-      # ======================
-      # PRESENZA → RIPRISTINO
-      # ======================
       - conditions:
           - condition: trigger
             id: occupato
@@ -176,26 +148,9 @@ action:
             target:
               entity_id: "{{ light_target }}"
             data:
-              transition: 5
               brightness: "{{ states(brightness_helper) | int }}"
           - service: input_number.set_value
             target:
               entity_id: "{{ brightness_helper }}"
             data:
               value: 0
-
-      # ======================
-      # RITORNO CORRENTE → RIPRISTINO
-      # ======================
-      - conditions:
-          - condition: trigger
-            id: ritorno_corrente
-          - condition: template
-            value_template: "{{ states(brightness_helper) | int > 0 }}"
-        sequence:
-          - service: light.turn_on
-            target:
-              entity_id: "{{ light_target }}"
-            data:
-              transition: 2
-              brightness: "{{ states(brightness_helper) | int }}"
