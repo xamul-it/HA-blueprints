@@ -47,6 +47,14 @@ blueprint:
           min: 1
           max: 240
 
+    transition_seconds:
+      name: Secondi transizione
+      default: 2
+      selector:
+        number:
+          min: 0
+          max: 10
+
 mode: restart
 
 trigger:
@@ -81,10 +89,22 @@ trigger:
       minutes: !input t_off
     id: off_finale
 
+  - platform: state
+    entity_id: !input light_target
+    attribute: brightness
+    id: brightness_change
+
+  - platform: state
+    entity_id: !input light_target
+    to: "on"
+    id: light_on
+
 action:
   - variables:
+      presence_sensor: !input presence_sensor
       light_target: !input light_target
       brightness_helper: !input brightness_helper
+      transition_seconds: !input transition_seconds
 
   - choose:
 
@@ -95,6 +115,36 @@ action:
             value_template: >
               {{ states(brightness_helper) | int == 0
                  and states(light_target) == 'on' }}
+        sequence:
+          - service: input_number.set_value
+            target:
+              entity_id: "{{ brightness_helper }}"
+            data:
+              value: "{{ state_attr(light_target,'brightness') | int }}"
+
+      - conditions:
+          - condition: trigger
+            id: brightness_change
+          - condition: template
+            value_template: >
+              {{ states(light_target) == 'on'
+                 and states(presence_sensor) == 'on'
+                 and trigger.to_state.context.id != this.context.id }}
+        sequence:
+          - service: input_number.set_value
+            target:
+              entity_id: "{{ brightness_helper }}"
+            data:
+              value: "{{ state_attr(light_target,'brightness') | int }}"
+
+      - conditions:
+          - condition: trigger
+            id: light_on
+          - condition: template
+            value_template: >
+              {{ states(light_target) == 'on'
+                 and states(presence_sensor) == 'on'
+                 and trigger.to_state.context.id != this.context.id }}
         sequence:
           - service: input_number.set_value
             target:
@@ -115,6 +165,7 @@ action:
               entity_id: "{{ light_target }}"
             data:
               brightness: "{{ (states(brightness_helper) | int * 0.5) | int }}"
+              transition: "{{ transition_seconds | int }}"
 
       - conditions:
           - condition: trigger
@@ -127,6 +178,7 @@ action:
               entity_id: "{{ light_target }}"
             data:
               brightness_pct: 1
+              transition: "{{ transition_seconds | int }}"
 
       - conditions:
           - condition: trigger
@@ -137,6 +189,8 @@ action:
           - service: light.turn_off
             target:
               entity_id: "{{ light_target }}"
+            data:
+              transition: "{{ transition_seconds | int }}"
 
       - conditions:
           - condition: trigger
@@ -149,6 +203,7 @@ action:
               entity_id: "{{ light_target }}"
             data:
               brightness: "{{ states(brightness_helper) | int }}"
+              transition: "{{ transition_seconds | int }}"
           - service: input_number.set_value
             target:
               entity_id: "{{ brightness_helper }}"
