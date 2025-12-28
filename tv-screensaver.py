@@ -6,7 +6,7 @@ import subprocess
 import os
 
 # PATH ai tuoi script Node
-TV_ON_SCRIPT = "/home/htpc/bin/tv-on.sh"
+TV_ON_SCRIPT = "/home/htpc/bin/tv-on.js"
 TV_OFF_SCRIPT = "/home/htpc/bin/tv-off.js"
 
 SCRIPT_TIMEOUT_SEC = 10
@@ -43,7 +43,7 @@ def on_screensaver_signal(connection, sender_name, object_path,
         run_script("tv-off", ["node", TV_OFF_SCRIPT])
     else:
         log("Screensaver disattivo: accendo TV")
-        run_script("tv-on", [TV_ON_SCRIPT])
+        run_script("tv-on", ["node", TV_ON_SCRIPT])
 
 def main():
     # bus della sessione (non serve DISPLAY/XAUTH)
